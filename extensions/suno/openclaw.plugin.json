@@ -1,0 +1,10 @@
+{
+  "id": "suno",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "apiKey": { "type": "string" }
+    }
+  }
+}
