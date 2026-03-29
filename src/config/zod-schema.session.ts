@@ -113,6 +113,7 @@ export const CommandsSchema = z
     restart: z.boolean().optional(),
     useAccessGroups: z.boolean().optional(),
     ownerAllowFrom: z.array(z.union([z.string(), z.number()])).optional(),
+    ownerDisplay: z.string().optional(),
   })
   .strict()
   .optional()

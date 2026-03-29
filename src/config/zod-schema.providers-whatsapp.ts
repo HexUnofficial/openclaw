@@ -79,6 +79,7 @@ export const WhatsAppAccountSchema = z
 export const WhatsAppConfigSchema = z
   .object({
     accounts: z.record(z.string(), WhatsAppAccountSchema.optional()).optional(),
+    enabled: z.boolean().optional(),
     capabilities: z.array(z.string()).optional(),
     markdown: MarkdownConfigSchema,
     configWrites: z.boolean().optional(),
