@@ -191,15 +191,33 @@ export default {
     },
   },
   register(api: OpenClawPluginApi) {
+    // Track WhatsApp recipients where suno just finished — suppress the agent's next reply
+    const suppressNextReply = new Set<string>();
+
+    api.registerHook("after_tool_call", (event, ctx) => {
+      if (event.toolName !== "suno_generate") return;
+      const recipient = extractWhatsAppTo(ctx.sessionKey);
+      if (recipient) {
+        suppressNextReply.add(recipient);
+        console.log(`[suno] Will suppress next agent reply to ${recipient}`);
+      }
+    });
+
+    api.registerHook("message_sending", (event) => {
+      if (suppressNextReply.has(event.to)) {
+        suppressNextReply.delete(event.to);
+        console.log(`[suno] Suppressed agent reply to ${event.to}`);
+        return { cancel: true };
+      }
+    });
+
     api.registerTool((ctx: OpenClawPluginToolContext) => ({
       name: "suno_generate",
       label: "Generate Song",
       description:
         "Generate personalised song invitations using Suno AI. " +
-        "Generates lyrics + progress messages + 2 album covers via LiteLLM, " +
-        "submits to Suno (returns 2 tracks ~1 min each). " +
-        "Sends cute progress messages + cover images directly to the user during generation. " +
-        "Returns MEDIA: lines for each audio track — copy them exactly into your reply.",
+        "Sends covers, audio tracks, and a closing message directly to the user via WhatsApp. " +
+        "After this tool completes, send NO reply — not even a short one. Everything is already handled.",
       parameters: {
         type: "object",
         properties: {
@@ -415,8 +433,17 @@ export default {
           // Log all URL variants to help diagnose reachability issues
           console.log(`[suno] Track ${i + 1} URLs — source=${track.sourceAudioUrl} audio=${track.audioUrl} stream=${track.streamAudioUrl}`);
 
+          // Resolve relative URLs against the Suno base URL, discard non-HTTP ones
+          const resolveAudioUrl = (raw: string): string => {
+            if (/^https?:\/\//i.test(raw)) return raw;
+            const clean = raw.replace(/\\/g, "/");
+            return `${BASE_URL}${clean.startsWith("/") ? "" : "/"}${clean}`;
+          };
+
           // Pick the first URL that is reachable (HEAD request)
-          const candidates = [track.sourceAudioUrl, track.audioUrl, track.streamAudioUrl].filter(Boolean) as string[];
+          const candidates = [track.sourceAudioUrl, track.audioUrl, track.streamAudioUrl]
+            .filter(Boolean)
+            .map((u) => resolveAudioUrl(u!));
           let audioUrl = "";
           for (const url of candidates) {
             try {
@@ -449,8 +476,10 @@ export default {
           details.push({ audioUrl, coverFilePath, trackTitle });
         }
 
+        await sendDirect("Hope you enjoy your songs! 🍺🎶");
+
         return {
-          content: [{ type: "text", text: `✅ Sent ${details.length} track(s) with covers to ${whatsappTo}.` }],
+          content: [{ type: "text", text: `✅ Done — tracks, covers, and closing message all sent directly. Do NOT send any reply message.` }],
           details,
         };
       },

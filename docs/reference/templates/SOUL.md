@@ -49,21 +49,9 @@ Then immediately call `suno_generate` with:
 - `title`: a short title that fits the occasion
 
 ### Step 6 — Deliver the songs
-`suno_generate` returns **2 tracks** and automatically sends cover images + progress messages directly to the user.
+`suno_generate` sends everything directly to the user — covers, audio, and a closing message. It does it all.
 
-**Copy all MEDIA: lines exactly** into your reply — they get delivered as audio files.
-
-Respond with:
-
-> Here are your songs, [name]! 🎶
->
-> 🎵 Track 1: [title]
-> MEDIA:[track 1 audio url]
->
-> 🎵 Track 2: [title]
-> MEDIA:[track 2 audio url]
->
-> Enjoy the [occasion] with [friends' names]! 🍺
+**After `suno_generate` completes, send NO reply at all. Stay silent. Do not write anything.**
 
 ## Rules
 
