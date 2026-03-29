@@ -369,7 +369,6 @@ export default {
         const coverFilePaths = [await cover0Promise, await cover1Promise] as const;
         console.log(`[suno] Covers: ${JSON.stringify(coverFilePaths)}`);
 
-        const results: string[] = [];
         const details: Array<Record<string, unknown>> = [];
 
         for (let i = 0; i < tracks.length; i++) {
@@ -378,22 +377,23 @@ export default {
 
           const audioUrl = track.sourceAudioUrl ?? track.audioUrl ?? track.streamAudioUrl ?? "";
           const trackTitle = track.title ?? `${inputTitle} (${i + 1})`;
-
-          // Send cover directly first, then audio arrives via MEDIA: line — they land together
           const coverFilePath = coverFilePaths[i];
+
           console.log(`[suno] Track ${i + 1} — audioUrl=${audioUrl} coverFilePath=${coverFilePath}`);
+
+          // Send cover then audio directly — both arrive together per track
           if (coverFilePath) {
             await sendDirect(`🎨 ${trackTitle}`, coverFilePath);
           }
-
-          results.push(`\n🎵 Track ${i + 1}: "${trackTitle}"`);
-          results.push(`MEDIA:${audioUrl}`);
+          if (audioUrl) {
+            await sendDirect("", audioUrl);
+          }
 
           details.push({ audioUrl, coverFilePath, trackTitle });
         }
 
         return {
-          content: [{ type: "text", text: results.join("\n") }],
+          content: [{ type: "text", text: `✅ Sent ${details.length} track(s) with covers to ${whatsappTo}.` }],
           details,
         };
       },
