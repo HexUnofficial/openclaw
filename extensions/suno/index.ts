@@ -255,7 +255,7 @@ export default {
             );
             console.log(`[suno] sendDirect ok — "${message.slice(0, 40)}"${mediaUrl ? ` + media: ${mediaUrl}` : ""}`);
           } catch (err) {
-            console.error(`[suno] sendDirect failed:`, err);
+            console.log(`[suno] sendDirect failed (not surfaced to user):`, err);
           }
         };
 
@@ -409,15 +409,38 @@ export default {
           const track = tracks[i];
           if (!track) continue;
 
-          const audioUrl = track.sourceAudioUrl ?? track.audioUrl ?? track.streamAudioUrl ?? "";
           const trackTitle = track.title ?? `${inputTitle} (${i + 1})`;
           const coverFilePath = coverFilePaths[i];
 
-          console.log(`[suno] Track ${i + 1} — audioUrl=${audioUrl} coverFilePath=${coverFilePath}`);
+          // Log all URL variants to help diagnose reachability issues
+          console.log(`[suno] Track ${i + 1} URLs — source=${track.sourceAudioUrl} audio=${track.audioUrl} stream=${track.streamAudioUrl}`);
+
+          // Pick the first URL that is reachable (HEAD request)
+          const candidates = [track.sourceAudioUrl, track.audioUrl, track.streamAudioUrl].filter(Boolean) as string[];
+          let audioUrl = "";
+          for (const url of candidates) {
+            try {
+              const probe = await fetch(url, { method: "HEAD", signal: AbortSignal.timeout(5000) });
+              if (probe.ok) { audioUrl = url; break; }
+              console.warn(`[suno] URL not ok (${probe.status}): ${url}`);
+            } catch (err) {
+              console.warn(`[suno] URL unreachable: ${url} — ${err}`);
+            }
+          }
+          if (!audioUrl) {
+            console.log(`[suno] No reachable audio URL for track ${i + 1}, skipping audio send`);
+          }
+
+          console.log(`[suno] Track ${i + 1} — using audioUrl=${audioUrl} coverFilePath=${coverFilePath}`);
 
           // Send cover then audio directly — both arrive together per track
           if (coverFilePath) {
-            await sendDirect(`🎨 ${trackTitle}`, coverFilePath);
+            const coverExists = await fs.access(coverFilePath).then(() => true).catch(() => false);
+            if (coverExists) {
+              await sendDirect(`🎨 ${trackTitle}`, coverFilePath);
+            } else {
+              console.log(`[suno] Cover file not found, skipping: ${coverFilePath}`);
+            }
           }
           if (audioUrl) {
             await sendDirect("", audioUrl);
