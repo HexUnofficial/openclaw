@@ -92,27 +92,62 @@ async function generateProgressMessages(params: {
   }
 }
 
-async function generateCoverImage(params: {
+async function generateImagePrompt(params: {
   litellmUrl: string;
   litellmKey: string;
-  title: string;
   occasion: string;
   friends: string;
   style: string;
+  title: string;
+}): Promise<string> {
+  const metaPrompt =
+    `Write a detailed image generation prompt for an album cover. ` +
+    `The mood should be inspired by a ${params.style} ${params.occasion} — use that only to set the atmosphere and visual energy, not as literal content. ` +
+    `Requirements: ` +
+    `- Amstel beer is the hero of the image: prominent Amstel bottles, cans or glasses with the red star logo clearly visible, styled beautifully ` +
+    `- The aesthetic should feel like the ${params.style} genre — let that inform lighting, colour palette, and composition ` +
+    `- Celebratory, warm, inviting energy ` +
+    `- High quality, photorealistic or painterly ` +
+    `- Absolutely NO text, words, letters, names, numbers, or placeholders anywhere in the image ` +
+    `Return ONLY the image generation prompt, no explanation.`;
+
+  try {
+    const res = await fetch(`${params.litellmUrl}/chat/completions`, {
+      method: "POST",
+      headers: litellmHeaders(params.litellmKey),
+      body: JSON.stringify({
+        model: "gpt-5-mini",
+        temperature: 0.8,
+        max_tokens: 250,
+        messages: [{ role: "user", content: metaPrompt }],
+      }),
+    });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const data = JSON.parse(await res.text()) as { choices?: Array<{ message?: { content?: string } }> };
+    const prompt = data.choices?.[0]?.message?.content?.trim();
+    if (prompt) return prompt;
+  } catch (err) {
+    console.error("[suno] Image prompt generation failed, using fallback:", err);
+  }
+  return (
+    `Amstel beer bottles and glasses with the red star logo as the hero, ` +
+    `${params.style} music aesthetic, warm amber and gold tones, celebratory atmosphere, ` +
+    `beautifully lit, photorealistic, no text or words anywhere in the image`
+  );
+}
+
+async function generateCoverImage(params: {
+  litellmUrl: string;
+  litellmKey: string;
+  imagePrompt: string;
   trackIndex: number;
 }): Promise<string | undefined> {
-  const imagePrompt =
-    `Generate a vibrant album cover for a ${params.style} song called "${params.title}", ` +
-    `created as an invitation for a ${params.occasion}. ` +
-    `Inspired by Amstel beer — warm colours, festive, celebratory atmosphere. ` +
-    `Friends invited: ${params.friends}.`;
-
   const res = await fetch(`${params.litellmUrl}/images/generations`, {
     method: "POST",
     headers: litellmHeaders(params.litellmKey),
     body: JSON.stringify({
       model: "gemini-2.5-flash-image",
-      prompt: imagePrompt,
+      prompt: params.imagePrompt,
       response_format: "b64_json",
     }),
   });
@@ -226,8 +261,10 @@ export default {
 
         const inputTitle = params.title?.trim() || params.occasion;
 
-        // Step 1: Generate lyrics (Suno needs these before submission)
-        const generatedLyrics = await generateLyrics({
+        // Step 1: Send ack immediately, then kick off all async work in parallel
+        await sendDirect(`🎶 On it! Cooking up your ${params.style} invitation for ${params.occasion}...`);
+
+        const lyricsPromise = generateLyrics({
           litellmUrl: litellmLocation,
           litellmKey,
           occasion: params.occasion,
@@ -235,29 +272,14 @@ export default {
           style: params.style,
         });
 
-        // Send immediate acknowledgment
-        await sendDirect(`🎶 On it! Cooking up your ${params.style} invitation for ${params.occasion}...`);
-
-        // Step 2: Start covers + progress messages in parallel with Suno submission
-        const cover0Promise = generateCoverImage({
+        const imagePromptPromise = generateImagePrompt({
           litellmUrl: litellmLocation,
           litellmKey,
-          title: `${inputTitle} (1)`,
           occasion: params.occasion,
           friends: params.friends,
           style: params.style,
-          trackIndex: 0,
-        }).catch((err) => { console.error("[suno] Cover 0 failed:", err); return undefined; });
-
-        const cover1Promise = generateCoverImage({
-          litellmUrl: litellmLocation,
-          litellmKey,
-          title: `${inputTitle} (2)`,
-          occasion: params.occasion,
-          friends: params.friends,
-          style: params.style,
-          trackIndex: 1,
-        }).catch((err) => { console.error("[suno] Cover 1 failed:", err); return undefined; });
+          title: inputTitle,
+        });
 
         const progressPromise = generateProgressMessages({
           litellmUrl: litellmLocation,
@@ -266,6 +288,18 @@ export default {
           friends: params.friends,
           style: params.style,
         });
+
+        // Start covers as soon as the image prompt resolves — don't wait for lyrics/Suno
+        const coversPromise = imagePromptPromise.then((imagePrompt) =>
+          Promise.all([
+            generateCoverImage({ litellmUrl: litellmLocation, litellmKey, imagePrompt, trackIndex: 0 })
+              .catch((err) => { console.error("[suno] Cover 0 failed:", err); return undefined; }),
+            generateCoverImage({ litellmUrl: litellmLocation, litellmKey, imagePrompt, trackIndex: 1 })
+              .catch((err) => { console.error("[suno] Cover 1 failed:", err); return undefined; }),
+          ])
+        );
+
+        const generatedLyrics = await lyricsPromise;
 
         // Submit to Suno
         const sunoHeaders = {
@@ -366,7 +400,7 @@ export default {
         }
 
         // Step 4: Covers should be ready by now (were generating during ~60s poll)
-        const coverFilePaths = [await cover0Promise, await cover1Promise] as const;
+        const coverFilePaths = await coversPromise;
         console.log(`[suno] Covers: ${JSON.stringify(coverFilePaths)}`);
 
         const details: Array<Record<string, unknown>> = [];

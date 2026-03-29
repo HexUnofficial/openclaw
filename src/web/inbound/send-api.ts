@@ -28,7 +28,9 @@ export function createWebSendApi(params: {
             mimetype: mediaType,
           };
         } else if (mediaType.startsWith("audio/")) {
-          payload = { audio: mediaBuffer, ptt: true, mimetype: mediaType };
+          // Only use PTT (voice note) for OGG/Opus — MP3 and other formats must be regular audio files
+          const isOgg = mediaType.includes("ogg");
+          payload = { audio: mediaBuffer, ptt: isOgg, mimetype: mediaType };
         } else if (mediaType.startsWith("video/")) {
           const gifPlayback = sendOptions?.gifPlayback;
           payload = {
