@@ -8,7 +8,7 @@ const POLL_INTERVAL_MS = 5000;
 const POLL_TIMEOUT_MS = 120 * 1000; // 120 seconds
 
 // Covers are saved here and sent as local files directly via WhatsApp
-const COVERS_DIR = path.join(os.tmpdir(), "suno-covers");
+const COVERS_DIR = path.join(os.homedir(), ".openclaw", "media", "suno-covers");
 
 function litellmHeaders(key: string): Record<string, string> {
   return { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };

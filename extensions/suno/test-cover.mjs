@@ -59,7 +59,7 @@ if (!b64) {
   process.exit(1);
 }
 
-const outDir = path.join(os.tmpdir(), "suno-covers");
+const outDir = path.join(os.homedir(), ".openclaw", "media", "suno-covers");
 await fs.mkdir(outDir, { recursive: true });
 const outPath = path.join(outDir, `test-cover-${Date.now()}.png`);
 await fs.writeFile(outPath, Buffer.from(b64, "base64"));
