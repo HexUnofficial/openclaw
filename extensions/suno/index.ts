@@ -114,7 +114,7 @@ async function generateImagePrompt(params: {
     `The song is ${params.style} genre, written for a ${params.occasion}. ` +
     `The scene, mood, and composition should be primarily inspired by that let the genre define the visual energy, lighting, and colour palette. ` +
     `Amstel beer should appear naturally in the scene as a prop that belongs there, not as the focus — depict it accurately: classic amber glass bottle or red-and-white can, with a red star on the label and the Amstel red-and-white branding. ` +
-    `Reference the occasion through setting, atmosphere, and props. ` ;
+    `Reference the occasion through setting, atmosphere, and props. Make it clear in the prompt to NOT HAVE ANY text or words anywhere in the image. Except Amstel logo, DO NOT put any letters, NO numbers, NO words. If it is a birthday DO NOT PUT ANY NUMBER OR EVEN THE WORD BIRTHDAY. Only do imagery and only Amstel Logo is allowed.` ;
 
   try {
     const res = await fetch(`${params.litellmUrl}/chat/completions`, {
@@ -141,7 +141,7 @@ async function generateImagePrompt(params: {
     `${params.style} album cover aesthetic for a ${params.occasion}, ` +
     `an Amstel beer bottle or can naturally present in the scene — amber glass bottle or red-and-white can, red star on the label, Amstel red-and-white branding, ` +
     `genre-appropriate lighting and colour palette, celebratory atmosphere, ` +
-    `beautifully lit, photorealistic, no text or words anywhere in the image`
+    `beautifully lit, photorealistic, no text or words anywhere in the image. Except Amstel logo, DO NOT put any letters, numbers words or anything in the image. If it is a birthday DO NOT PUT ANY NUMBER OR EVEN THE WORD BIRTHDAY. Only do imagery and only Amstel Logo is allowed.`
   );
 }
 
