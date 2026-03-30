@@ -2,6 +2,10 @@ import type { OpenClawPluginApi, OpenClawPluginToolContext } from "openclaw/plug
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
 
 const BASE_URL = "https://api.sunoapi.org";
 const POLL_INTERVAL_MS = 5000;
@@ -100,16 +104,17 @@ async function generateImagePrompt(params: {
   style: string;
   title: string;
 }): Promise<string> {
-  const metaPrompt =
-    `Write a detailed image generation prompt for an album cover. ` +
-    `The mood should be inspired by a ${params.style} ${params.occasion} — use that only to set the atmosphere and visual energy, not as literal content. ` +
-    `Requirements: ` +
-    `- Amstel beer is the hero of the image: prominent Amstel bottles, cans or glasses with the red star logo clearly visible, styled beautifully ` +
-    `- The aesthetic should feel like the ${params.style} genre — let that inform lighting, colour palette, and composition ` +
-    `- Celebratory, warm, inviting energy ` +
-    `- High quality, photorealistic or painterly ` +
-    `- Absolutely NO text, words, letters, names, numbers, or placeholders anywhere in the image ` +
-    `Return ONLY the image generation prompt, no explanation.`;
+  const systemMessage =
+    `You are an expert at writing prompts for AI image generation models (like DALL-E or Gemini image gen). ` +
+    `Write vivid, specific, painterly prompts that describe scene, lighting, mood, colour palette, and composition in concrete visual terms. ` +
+    `Never mention brand names  except Amstel. Never include text, words, or labels in the image description.`;
+
+  const userMessage =
+    `Write an image generation prompt for a memorable album cover. ` +
+    `The song is ${params.style} genre, written for a ${params.occasion}. ` +
+    `The scene, mood, and composition should be primarily inspired by that let the genre define the visual energy, lighting, and colour palette. ` +
+    `Amstel beer should appear naturally in the scene as a prop that belongs there, not as the focus — depict it accurately: classic amber glass bottle or red-and-white can, with a red star on the label and the Amstel red-and-white branding. ` +
+    `Reference the occasion through setting, atmosphere, and props. ` ;
 
   try {
     const res = await fetch(`${params.litellmUrl}/chat/completions`, {
@@ -117,9 +122,12 @@ async function generateImagePrompt(params: {
       headers: litellmHeaders(params.litellmKey),
       body: JSON.stringify({
         model: "gpt-5-mini",
-        temperature: 0.8,
-        max_tokens: 250,
-        messages: [{ role: "user", content: metaPrompt }],
+        temperature: 0.9,
+        max_tokens: 450,
+        messages: [
+          { role: "system", content: systemMessage },
+          { role: "user", content: userMessage },
+        ],
       }),
     });
     if (!res.ok) throw new Error(`status ${res.status}`);
@@ -130,10 +138,30 @@ async function generateImagePrompt(params: {
     console.error("[suno] Image prompt generation failed, using fallback:", err);
   }
   return (
-    `Amstel beer bottles and glasses with the red star logo as the hero, ` +
-    `${params.style} music aesthetic, warm amber and gold tones, celebratory atmosphere, ` +
+    `${params.style} album cover aesthetic for a ${params.occasion}, ` +
+    `an Amstel beer bottle or can naturally present in the scene — amber glass bottle or red-and-white can, red star on the label, Amstel red-and-white branding, ` +
+    `genre-appropriate lighting and colour palette, celebratory atmosphere, ` +
     `beautifully lit, photorealistic, no text or words anywhere in the image`
   );
+}
+
+async function downloadAndConvertToOgg(audioUrl: string, trackIndex: number): Promise<string> {
+  await fs.mkdir(COVERS_DIR, { recursive: true });
+  const base = `track-${Date.now()}-${trackIndex}`;
+  const tmpInput = path.join(COVERS_DIR, `${base}.tmp`);
+  const oggPath = path.join(COVERS_DIR, `${base}.ogg`);
+
+  const res = await fetch(audioUrl);
+  if (!res.ok) throw new Error(`Failed to download audio (${res.status}): ${audioUrl}`);
+  const buffer = await res.arrayBuffer();
+  await fs.writeFile(tmpInput, Buffer.from(buffer));
+
+  // Convert to OGG Opus — works on WhatsApp for both iOS and Android
+  await execAsync(`ffmpeg -y -i "${tmpInput}" -c:a libopus "${oggPath}"`);
+  await fs.unlink(tmpInput).catch(() => {});
+
+  console.log(`[suno] Converted track ${trackIndex + 1} to OGG: ${oggPath}`);
+  return oggPath;
 }
 
 async function generateCoverImage(params: {
@@ -470,7 +498,13 @@ export default {
             }
           }
           if (audioUrl) {
-            await sendDirect("", audioUrl);
+            try {
+              const oggPath = await downloadAndConvertToOgg(audioUrl, i);
+              await sendDirect("", oggPath);
+            } catch (err) {
+              console.error(`[suno] OGG conversion failed for track ${i + 1}, falling back to URL:`, err);
+              await sendDirect("", audioUrl);
+            }
           }
 
           details.push({ audioUrl, coverFilePath, trackTitle });
