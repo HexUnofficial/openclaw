@@ -156,8 +156,8 @@ async function downloadAndConvertToOgg(audioUrl: string, trackIndex: number): Pr
   const buffer = await res.arrayBuffer();
   await fs.writeFile(tmpInput, Buffer.from(buffer));
 
-  // Convert to OGG Opus — works on WhatsApp for both iOS and Android
-  await execAsync(`ffmpeg -y -i "${tmpInput}" -c:a libopus "${oggPath}"`);
+  // Convert to mono OGG Opus — WhatsApp PTT requires mono audio
+  await execAsync(`ffmpeg -y -i "${tmpInput}" -c:a libopus -ac 1 -ar 48000 "${oggPath}"`);
   await fs.unlink(tmpInput).catch(() => {});
 
   console.log(`[suno] Converted track ${trackIndex + 1} to OGG: ${oggPath}`);
@@ -238,6 +238,81 @@ export default {
         return { cancel: true };
       }
     });
+
+    api.registerTool((_ctx: OpenClawPluginToolContext) => ({
+      name: "suno_resend",
+      label: "Resend Last Song",
+      description:
+        "Resend the most recently generated Suno song files (OGG audio + cover images) to a WhatsApp number. " +
+        "Use this to retry delivery without regenerating audio. After this tool completes, send NO reply.",
+      parameters: {
+        type: "object",
+        properties: {
+          to: {
+            type: "string",
+            description: "WhatsApp JID or phone number to send to, e.g. '447956116182@s.whatsapp.net' or '+447956116182'",
+          },
+        },
+        required: ["to"],
+      },
+
+      async execute(_id: string, rawParams: Record<string, unknown>) {
+        let to = (rawParams.to as string).trim();
+        // Normalise: strip leading + and append @s.whatsapp.net if bare number
+        if (!to.includes("@")) {
+          to = `${to.replace(/^\+/, "")}@s.whatsapp.net`;
+        }
+
+        const whatsappTo = to;
+        const sendDirect = async (message: string, mediaUrl?: string) => {
+          try {
+            await api.runtime.channel.whatsapp.sendMessageWhatsApp(
+              whatsappTo,
+              message,
+              { verbose: false, ...(mediaUrl ? { mediaUrl } : {}) },
+            );
+            console.log(`[suno/resend] sent "${message.slice(0, 40)}"${mediaUrl ? ` + ${mediaUrl}` : ""}`);
+          } catch (err) {
+            console.error(`[suno/resend] sendDirect failed:`, err);
+            throw err;
+          }
+        };
+
+        await fs.mkdir(COVERS_DIR, { recursive: true });
+        const allFiles = await fs.readdir(COVERS_DIR);
+
+        // Find latest pair of OGG files — prefer mono variants if present
+        const allOgg = allFiles.filter((f) => f.endsWith(".ogg")).sort();
+        // Take last 2, preferring -mono files over originals
+        const monoFiles = allOgg.filter((f) => f.includes("-mono"));
+        const oggFiles = (monoFiles.length >= 2 ? monoFiles : allOgg).slice(-2);
+        const coverFiles = allFiles
+          .filter((f) => f.endsWith(".png") && f.startsWith("cover-"))
+          .sort()
+          .slice(-2); // last 2
+
+        if (oggFiles.length === 0) throw new Error("No OGG files found in " + COVERS_DIR);
+
+        console.log(`[suno/resend] Sending to ${whatsappTo}: ogg=${JSON.stringify(oggFiles)} covers=${JSON.stringify(coverFiles)}`);
+
+        for (let i = 0; i < oggFiles.length; i++) {
+          const coverFile = coverFiles[i];
+          const oggFile = oggFiles[i];
+          if (coverFile) {
+            await sendDirect(`🎨 Track ${i + 1}`, path.join(COVERS_DIR, coverFile));
+          }
+          if (oggFile) {
+            await sendDirect("", path.join(COVERS_DIR, oggFile));
+          }
+        }
+
+        await sendDirect("Hope you enjoy your songs! 🍺🎶");
+
+        return {
+          content: [{ type: "text", text: `✅ Resent ${oggFiles.length} track(s) to ${whatsappTo}. Do NOT send any reply.` }],
+        };
+      },
+    }));
 
     api.registerTool((ctx: OpenClawPluginToolContext) => ({
       name: "suno_generate",

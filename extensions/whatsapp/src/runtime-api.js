@@ -59,7 +59,7 @@ export async function sendMessageWhatsApp(to, body, options = {}) {
       const mimeMap = {
         ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
         ".gif": "image/gif", ".webp": "image/webp", ".mp4": "video/mp4",
-        ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".pdf": "application/pdf"
+        ".mp3": "audio/mpeg", ".ogg": "audio/ogg; codecs=opus", ".pdf": "application/pdf"
       };
       mediaType = mimeMap[ext] || "application/octet-stream";
     }
